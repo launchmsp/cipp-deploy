@@ -1,0 +1,131 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.34.44.8038",
+      "templateHash": "18419393074572598979"
+    }
+  },
+  "parameters": {
+    "funcAppName": {
+      "type": "string"
+    },
+    "funcStorageName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "offloadingType": {
+      "type": "string",
+      "defaultValue": "proc",
+      "allowedValues": [
+        "proc",
+        "standards",
+        "auditlog",
+        "usertasks"
+      ]
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2021-02-01",
+      "name": "[format('{0}-{1}-plan', parameters('funcAppName'), parameters('offloadingType'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
+      "kind": "Linux",
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2021-02-01",
+      "name": "[format('{0}-{1}', parameters('funcAppName'), parameters('offloadingType'))]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp,linux",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "Linux": "true"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-{1}-plan', parameters('funcAppName'), parameters('offloadingType')))]",
+        "reserved": true,
+        "httpsOnly": true,
+        "siteConfig": {
+          "appSettings": [
+            {
+              "name": "FUNCTIONS_WORKER_RUNTIME",
+              "value": "powershell"
+            },
+            {
+              "name": "AzureWebJobsStorage",
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', parameters('funcStorageName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('funcStorageName')), '2024-01-01').keys[0].value)]"
+            },
+            {
+              "name": "FUNCTIONS_EXTENSION_VERSION",
+              "value": "~4"
+            },
+            {
+              "name": "CIPP_PROCESSOR",
+              "value": "true"
+            },
+            {
+              "name": "AzureWebJobs.CIPPHttpTrigger.Disabled",
+              "value": "true"
+            }
+          ],
+          "linuxFxVersion": "powershell|7.4"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('{0}-{1}-plan', parameters('funcAppName'), parameters('offloadingType')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/accessPolicies",
+      "apiVersion": "2024-12-01-preview",
+      "name": "[format('{0}/{1}', parameters('funcAppName'), 'add')]",
+      "properties": {
+        "accessPolicies": [
+          {
+            "objectId": "[reference(resourceId('Microsoft.Web/sites', format('{0}-{1}', parameters('funcAppName'), parameters('offloadingType'))), '2021-02-01', 'full').identity.principalId]",
+            "tenantId": "[subscription().tenantId]",
+            "permissions": {
+              "keys": [],
+              "secrets": [
+                "all"
+              ],
+              "certificates": []
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-{1}', parameters('funcAppName'), parameters('offloadingType')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Web/sites/{0}', format('{0}-{1}', parameters('funcAppName'), parameters('offloadingType')))]",
+      "name": "[guid(resourceGroup().id, format('{0}-{1}', parameters('funcAppName'), parameters('offloadingType')), 'Contributor')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('funcAppName')), '2021-02-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-{1}', parameters('funcAppName'), parameters('offloadingType')))]"
+      ]
+    }
+  ]
+}
